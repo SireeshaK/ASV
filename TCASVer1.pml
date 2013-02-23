@@ -17,14 +17,8 @@ typedef position  {
   x_array x[x_bound]  /*x, y, z */
 };
 
-/*Channel declaration */
-typedef msg {
-        byte p_id;
-	byte x,y,z
-}; /* pid, Coordinate */
-
-chan interrogation[N] = [100] of {byte};
-chan reply[N] = [100] of {msg}; 
+chan query = [100] of {byte};
+chan reply[N] = [100] of {byte,byte,byte,byte}; 
 
 
 /* To generate random number between 0- 255 */
@@ -38,11 +32,11 @@ inline randnum()
 	}	
 position coordinate;
 
-active [5] proctype airplane(){
+proctype airplane(chan receiveChan){
 
 /*Initilising the position of airplane in airspace, provided there should not be any airplane assigned to that position already*/
 	byte ix,iy,iz;
-	byte randNo;	
+	byte randNo;		
 	L1 :	randnum();
 		ix=randNo%x_bound;
 		randnum();
@@ -51,13 +45,34 @@ active [5] proctype airplane(){
 		iz=randNo%z_bound;
 
 	if
-	 	::(coordinate.x[ix].y[iy].z[iz] == 0) -> coordinate.x[ix].y[iy].z[iz]=_pid+1; /* _pid can possibly be zero so use _pid+1 */
+	 	::(coordinate.x[ix].y[iy].z[iz] == 0) -> coordinate.x[ix].y[iy].z[iz]=_pid; /* _pid can possibly be zero so use _pid+1 */
 		::else -> goto L1
 	fi;
 	printf("airplane position in airspace for pid %d : %d|%d|%d", _pid,ix,iy,iz );
 
-/* Sending interrogation and receiving reply messages */
+/* Sending query and receive reply messages */
+	byte qid,rid,i,x,y,z;
+	do
+	:: query!_pid;		 /*Send the query message through query channel*/
+	::	/*Read the query message from query channel*/
+		if
+		::query?eval(_pid-1) -> skip
+		::else -> query?qid;
+		  reply[qid-1]!_pid,ix,iy,iz /*send a message containing pid, position of aircraft via reply channel*/
+		fi;
+	:: receiveChan?rid,x,y,z;
+	od;
 	
+	
+}
+
+init {
+byte i;
+	atomic {
+		for(i : 0..(N-1)) {
+			run airplane(reply[i]);
+		}
+	}
 }
 
 
