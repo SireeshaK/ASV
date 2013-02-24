@@ -32,11 +32,11 @@ inline randnum()
 	}	
 position coordinate;
 
-proctype airplane(chan receiveChan){
+proctype airplane(chan receiveChan){ 	/* Each airplane has its own receive channel */
 
 /*Initilising the position of airplane in airspace, provided there should not be any airplane assigned to that position already*/
 	byte ix,iy,iz;
-	byte randNo;		
+	byte randNo;	
 	L1 :	randnum();
 		ix=randNo%x_bound;
 		randnum();
@@ -45,24 +45,19 @@ proctype airplane(chan receiveChan){
 		iz=randNo%z_bound;
 
 	if
-	 	::(coordinate.x[ix].y[iy].z[iz] == 0) -> coordinate.x[ix].y[iy].z[iz]=_pid; /* _pid can possibly be zero so use _pid+1 */
+	 	::(coordinate.x[ix].y[iy].z[iz] == 0) -> coordinate.x[ix].y[iy].z[iz]=_pid; 
 		::else -> goto L1
 	fi;
-	printf("airplane position in airspace for pid %d : %d|%d|%d", _pid,ix,iy,iz );
-
-/* Sending query and receive reply messages */
-	byte qid,rid,i,x,y,z;
-	do
-	:: query!_pid;		 /*Send the query message through query channel*/
-	::	/*Read the query message from query channel*/
-		if
-		::query?eval(_pid-1) -> skip
-		::else -> query?qid;
-		  reply[qid-1]!_pid,ix,iy,iz /*send a message containing pid, position of aircraft via reply channel*/
-		fi;
-	:: receiveChan?rid,x,y,z;
-	od;
 	
+/* Sending query and receive reply messages */
+	byte query_id,receive_id,receive_x,receive_y,receive_z;
+	
+	do
+	:: query!_pid;								 /*Send the query message through query channel*/
+	:: query?query_id;		 			 		 /*Read the query message from query channel*/
+	:: (query_id!=0) && (query_id!=_pid) ->	reply[query_id-1]!_pid,ix,iy,iz  /*send a message containing pid, position of aircraft via reply channel*/
+	:: receiveChan?receive_id,receive_x,receive_y,receive_z;
+	od;
 	
 }
 
