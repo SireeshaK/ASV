@@ -1,7 +1,7 @@
 #define x_bound 4
 #define y_bound 4
 #define z_bound 4
-#define N 5
+#define N 3
 
 
 /* Airspace declartion */
@@ -86,7 +86,42 @@ airplane_motion plane_motion;
         location receivedPlane_loc;
 	
 	do
-	:: 										 /*Movement of airplane in airspace based on direction*/
+	:: 	/*Movement of airplane in airspace based on direction*/
+		coordinate.x[plane_motion.loc.ix].y[plane_motion.loc.iy].z[plane_motion.loc.iz] = 0; /*clearing current position in airspace*/
+		atomic{
+		if
+		::plane_motion.dir.x == increment && plane_motion.loc.ix == (x_bound-1) -> plane_motion.loc.ix = 0
+		::plane_motion.dir.x == increment && plane_motion.loc.ix == (x_bound-1) -> plane_motion.dir.x = decrement; plane_motion.loc.ix--		
+		::plane_motion.dir.x == decrement && plane_motion.loc.ix == 0 -> plane_motion.loc.ix = (x_bound-1)
+		::plane_motion.dir.x == decrement && plane_motion.loc.ix == 0 -> plane_motion.dir.x = increment; plane_motion.loc.ix++
+		::plane_motion.dir.x == increment && plane_motion.loc.ix < (x_bound-1) -> plane_motion.loc.ix++ 
+		::plane_motion.dir.x == decrement && plane_motion.loc.ix > 0 -> plane_motion.loc.ix--
+		::else -> skip
+		fi;
+
+		if
+		::plane_motion.dir.y == increment && plane_motion.loc.iy == (y_bound-1) -> plane_motion.loc.iy = 0
+		::plane_motion.dir.y == increment && plane_motion.loc.iy == (y_bound-1) -> plane_motion.dir.y = decrement; plane_motion.loc.iy--		
+		::plane_motion.dir.y == decrement && plane_motion.loc.iy == 0 -> plane_motion.loc.iy = (y_bound-1)
+		::plane_motion.dir.y == decrement && plane_motion.loc.iy == 0 -> plane_motion.dir.y = increment; plane_motion.loc.iy++
+		::plane_motion.dir.y == increment && plane_motion.loc.iy < (y_bound-1) -> plane_motion.loc.iy++ 
+		::plane_motion.dir.y == decrement && plane_motion.loc.iy > 0 -> plane_motion.loc.iy--
+		::else -> skip
+		fi;	
+
+		if
+		::plane_motion.dir.z == increment && plane_motion.loc.iz == (z_bound-1) -> plane_motion.loc.iz = 0
+		::plane_motion.dir.z == increment && plane_motion.loc.iz == (z_bound-1) -> plane_motion.dir.z = decrement; plane_motion.loc.iz--		
+		::plane_motion.dir.z == decrement && plane_motion.loc.iz == 0 -> plane_motion.loc.iz = (z_bound-1)
+		::plane_motion.dir.z == decrement && plane_motion.loc.iz == 0 -> plane_motion.dir.z = increment; plane_motion.loc.iz++
+		::plane_motion.dir.z == increment && plane_motion.loc.iz < (z_bound-1) -> plane_motion.loc.iz++ 
+		::plane_motion.dir.z == decrement && plane_motion.loc.iz > 0 -> plane_motion.loc.iz--
+		::else -> skip
+		fi;	
+		coordinate.x[plane_motion.loc.ix].y[plane_motion.loc.iy].z[plane_motion.loc.iz] = _pid; /*updating new position in airspace*/
+		}
+		
+									 
 	:: query!_pid;									 /*Send the query message through query channel*/
 	:: query?query_id;		 			 			 /*Read the query message from query channel*/
 	:: (query_id!=0) && (query_id!=_pid) ->	reply[query_id-1]!_pid,plane_motion.loc  /*send a message containing pid, position of airplane via reply channel*/
