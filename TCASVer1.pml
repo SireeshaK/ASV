@@ -4,6 +4,7 @@
 #define N 3
 
 
+
 /* Airspace declartion */
 	typedef y_array {
 		byte z[z_bound]
@@ -18,20 +19,20 @@
 	};
 	position coordinate;
 
-/*Airplane attributes*/
+/* Airplane attributes*/
 	typedef location { byte ix;byte iy;byte iz};
 	typedef direction {mtype x;mtype y;mtype z};
 	typedef airplane_motion { location loc; direction dir};
 
 /* Channel declaration*/
 	chan query = [100] of {byte};
-	chan reply[N] = [100] of {byte,location}; 	/* Each airplane has its own receive channel */
+	chan reply[N] = [100] of {byte,location}; 		/* Each airplane has its own receive channel */
 
-/*direction declaration*/
-mtype = {increment,decrement, none}
+/* Direction declaration*/
+	mtype = {increment,decrement, none}
 	
 /* To generate random number between 0- 255 */
-byte randNo;
+	byte randNo;
 	inline randnum()
 		{
 		do
@@ -41,91 +42,110 @@ byte randNo;
 		od;
 		}	
 
+/* Movement of airplane in airspace based on direction*/
+	inline move_plane()
+	{
+	 timer++;
+	   timer=timer%airplane_speed;
+	   if
+	   :: (timer==0)->
+		coordinate.x[myPlane.loc.ix].y[myPlane.loc.iy].z[myPlane.loc.iz] = 0; /*clearing current position in airspace*/
+		atomic{
+		if
+		::myPlane.dir.x == increment && myPlane.loc.ix == (x_bound-1) -> myPlane.loc.ix = 0
+		::myPlane.dir.x == increment && myPlane.loc.ix == (x_bound-1) -> myPlane.dir.x = decrement; myPlane.loc.ix--		
+		::myPlane.dir.x == decrement && myPlane.loc.ix == 0 -> myPlane.loc.ix = (x_bound-1)
+		::myPlane.dir.x == decrement && myPlane.loc.ix == 0 -> myPlane.dir.x = increment; myPlane.loc.ix++
+		::myPlane.dir.x == increment && myPlane.loc.ix < (x_bound-1) -> myPlane.loc.ix++ 
+		::myPlane.dir.x == decrement && myPlane.loc.ix > 0 -> myPlane.loc.ix--
+		::else -> skip
+		fi;
+
+		if
+		::myPlane.dir.y == increment && myPlane.loc.iy == (y_bound-1) -> myPlane.loc.iy = 0
+		::myPlane.dir.y == increment && myPlane.loc.iy == (y_bound-1) -> myPlane.dir.y = decrement; myPlane.loc.iy--		
+		::myPlane.dir.y == decrement && myPlane.loc.iy == 0 -> myPlane.loc.iy = (y_bound-1)
+		::myPlane.dir.y == decrement && myPlane.loc.iy == 0 -> myPlane.dir.y = increment; myPlane.loc.iy++
+		::myPlane.dir.y == increment && myPlane.loc.iy < (y_bound-1) -> myPlane.loc.iy++ 
+		::myPlane.dir.y == decrement && myPlane.loc.iy > 0 -> myPlane.loc.iy--
+		::else -> skip
+		fi;	
+
+		if
+		::myPlane.dir.z == increment && myPlane.loc.iz == (z_bound-1) -> myPlane.loc.iz = 0
+		::myPlane.dir.z == increment && myPlane.loc.iz == (z_bound-1) -> myPlane.dir.z = decrement; myPlane.loc.iz--		
+		::myPlane.dir.z == decrement && myPlane.loc.iz == 0 -> myPlane.loc.iz = (z_bound-1)
+		::myPlane.dir.z == decrement && myPlane.loc.iz == 0 -> myPlane.dir.z = increment; myPlane.loc.iz++
+		::myPlane.dir.z == increment && myPlane.loc.iz < (z_bound-1) -> myPlane.loc.iz++ 
+		::myPlane.dir.z == decrement && myPlane.loc.iz > 0 -> myPlane.loc.iz--
+		::else -> skip
+		fi;	
+		coordinate.x[myPlane.loc.ix].y[myPlane.loc.iy].z[myPlane.loc.iz] = _pid; /*updating new position in airspace*/
+		}
+	::else->skip;
+	fi;
+	}
 
 proctype airplane(chan receiveChan){ 	
-airplane_motion plane_motion;
-/*Identifying the direction for airplane to move */
+airplane_motion myPlane;
+/* Identifying the speed for airplane to move*/
+	byte airplane_speed;
+	select(airplane_speed : 1..5);
+
+/* Identifying the direction for airplane to move */
 	L1 :	if
-		::plane_motion.dir.x=increment
-		::plane_motion.dir.x=decrement
-		::plane_motion.dir.x=none
+		::myPlane.dir.x=increment
+		::myPlane.dir.x=decrement
+		::myPlane.dir.x=none
 		fi;
 
 		if
-		::plane_motion.dir.y=increment
-		::plane_motion.dir.y=decrement
-		::plane_motion.dir.y=none
+		::myPlane.dir.y=increment
+		::myPlane.dir.y=decrement
+		::myPlane.dir.y=none
 		fi;
 
 		if
-		::plane_motion.dir.z=increment
-		::plane_motion.dir.z=decrement
-		::plane_motion.dir.z=none
+		::myPlane.dir.z=increment
+		::myPlane.dir.z=decrement
+		::myPlane.dir.z=none
 		fi;
 
 	if
-	 	::(plane_motion.dir.x==none) && (plane_motion.dir.y==none) && (plane_motion.dir.z==none)-> goto L1
+	 	::(myPlane.dir.x==none) && (myPlane.dir.y==none) && (myPlane.dir.z==none)-> goto L1
 		::else -> skip
 	fi;			
 
-/*Initilising the position of airplane in airspace, provided there should not be any airplane assigned to that position already*/
+/* Initilising the position of airplane in airspace, provided there should not be any airplane assigned to that position already*/
 	L2 :	randnum();
-		plane_motion.loc.ix=randNo%x_bound;
+		myPlane.loc.ix=randNo%x_bound;
 		randnum();
-		plane_motion.loc.iy=randNo%y_bound;
+		myPlane.loc.iy=randNo%y_bound;
 		randnum();
-		plane_motion.loc.iz=randNo%z_bound;
+		myPlane.loc.iz=randNo%z_bound;
 
 	if
-	 	::(coordinate.x[plane_motion.loc.ix].y[plane_motion.loc.iy].z[plane_motion.loc.iz] == 0) -> coordinate.x[plane_motion.loc.ix].y[plane_motion.loc.iy].z[plane_motion.loc.iz]=_pid; 
+	 	::(coordinate.x[myPlane.loc.ix].y[myPlane.loc.iy].z[myPlane.loc.iz] == 0) -> coordinate.x[myPlane.loc.ix].y[myPlane.loc.iy].z[myPlane.loc.iz]=_pid; 
 		::else -> goto L2
 	fi;
 	
 /* Sending query and receive reply messages */
 	byte query_id,received_id;
         location receivedPlane_loc;
+	byte timer;
+
 	
-	do
-	:: 	/*Movement of airplane in airspace based on direction*/
-		coordinate.x[plane_motion.loc.ix].y[plane_motion.loc.iy].z[plane_motion.loc.iz] = 0; /*clearing current position in airspace*/
-		atomic{
-		if
-		::plane_motion.dir.x == increment && plane_motion.loc.ix == (x_bound-1) -> plane_motion.loc.ix = 0
-		::plane_motion.dir.x == increment && plane_motion.loc.ix == (x_bound-1) -> plane_motion.dir.x = decrement; plane_motion.loc.ix--		
-		::plane_motion.dir.x == decrement && plane_motion.loc.ix == 0 -> plane_motion.loc.ix = (x_bound-1)
-		::plane_motion.dir.x == decrement && plane_motion.loc.ix == 0 -> plane_motion.dir.x = increment; plane_motion.loc.ix++
-		::plane_motion.dir.x == increment && plane_motion.loc.ix < (x_bound-1) -> plane_motion.loc.ix++ 
-		::plane_motion.dir.x == decrement && plane_motion.loc.ix > 0 -> plane_motion.loc.ix--
-		::else -> skip
-		fi;
-
-		if
-		::plane_motion.dir.y == increment && plane_motion.loc.iy == (y_bound-1) -> plane_motion.loc.iy = 0
-		::plane_motion.dir.y == increment && plane_motion.loc.iy == (y_bound-1) -> plane_motion.dir.y = decrement; plane_motion.loc.iy--		
-		::plane_motion.dir.y == decrement && plane_motion.loc.iy == 0 -> plane_motion.loc.iy = (y_bound-1)
-		::plane_motion.dir.y == decrement && plane_motion.loc.iy == 0 -> plane_motion.dir.y = increment; plane_motion.loc.iy++
-		::plane_motion.dir.y == increment && plane_motion.loc.iy < (y_bound-1) -> plane_motion.loc.iy++ 
-		::plane_motion.dir.y == decrement && plane_motion.loc.iy > 0 -> plane_motion.loc.iy--
-		::else -> skip
-		fi;	
-
-		if
-		::plane_motion.dir.z == increment && plane_motion.loc.iz == (z_bound-1) -> plane_motion.loc.iz = 0
-		::plane_motion.dir.z == increment && plane_motion.loc.iz == (z_bound-1) -> plane_motion.dir.z = decrement; plane_motion.loc.iz--		
-		::plane_motion.dir.z == decrement && plane_motion.loc.iz == 0 -> plane_motion.loc.iz = (z_bound-1)
-		::plane_motion.dir.z == decrement && plane_motion.loc.iz == 0 -> plane_motion.dir.z = increment; plane_motion.loc.iz++
-		::plane_motion.dir.z == increment && plane_motion.loc.iz < (z_bound-1) -> plane_motion.loc.iz++ 
-		::plane_motion.dir.z == decrement && plane_motion.loc.iz > 0 -> plane_motion.loc.iz--
-		::else -> skip
-		fi;	
-		coordinate.x[plane_motion.loc.ix].y[plane_motion.loc.iy].z[plane_motion.loc.iz] = _pid; /*updating new position in airspace*/
-		}
-		
-									 
+	
+	
+	do												 
 	:: query!_pid;									 /*Send the query message through query channel*/
+	   move_plane();										 
 	:: query?query_id;		 			 			 /*Read the query message from query channel*/
-	:: (query_id!=0) && (query_id!=_pid) ->	reply[query_id-1]!_pid,plane_motion.loc  /*send a message containing pid, position of airplane via reply channel*/
-	:: receiveChan?received_id,receivedPlane_loc;
+	   move_plane();
+	:: (query_id!=0) && (query_id!=_pid) ->	reply[query_id-1]!_pid,myPlane.loc;      /*send a reply message via reply channel*/
+	   move_plane();
+	:: receiveChan?received_id,receivedPlane_loc;					 /*read a reply message via reply channel*/
+	   move_plane();
 	od;
 	
 }
