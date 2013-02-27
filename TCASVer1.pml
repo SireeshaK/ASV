@@ -1,8 +1,8 @@
-#define x_bound 4
-#define y_bound 4
-#define z_bound 4
-#define N 3
-
+#define x_bound 10
+#define y_bound 10
+#define z_bound 10
+#define NoOfAirplanes 5
+#define kCells 3	
 
 
 /* Airspace declartion */
@@ -26,7 +26,7 @@
 
 /* Channel declaration*/
 	chan query = [100] of {byte};
-	chan reply[N] = [100] of {byte,location}; 		/* Each airplane has its own receive channel */
+	chan reply[NoOfAirplanes] = [100] of {byte,location}; 		/* Each airplane has its own receive channel */
 
 /* Direction declaration*/
 	mtype = {increment,decrement, none}
@@ -90,7 +90,7 @@ proctype airplane(chan receiveChan){
 airplane_motion myPlane;
 /* Identifying the speed for airplane to move*/
 	byte airplane_speed;
-	select(airplane_speed : 1..5);
+	select(airplane_speed : 1..3);
 
 /* Identifying the direction for airplane to move */
 	L1 :	if
@@ -128,14 +128,15 @@ airplane_motion myPlane;
 	 	::(coordinate.x[myPlane.loc.ix].y[myPlane.loc.iy].z[myPlane.loc.iz] == 0) -> coordinate.x[myPlane.loc.ix].y[myPlane.loc.iy].z[myPlane.loc.iz]=_pid; 
 		::else -> goto L2
 	fi;
+/* Identifying the TA and RA region around the airplane based on the speed*/
+	byte RA,TA;
+	RA=kCells/airplane_speed;
+	TA=(2*kCells)/airplane_speed;	
 	
 /* Sending query and receive reply messages */
 	byte query_id,received_id;
         location receivedPlane_loc;
 	byte timer;
-
-	
-	
 	
 	do												 
 	:: query!_pid;									 /*Send the query message through query channel*/
@@ -153,7 +154,7 @@ airplane_motion myPlane;
 init {
 byte i;
 	atomic {
-		for(i : 0..(N-1)) {
+		for(i : 0..(NoOfAirplanes-1)) {
 			run airplane(reply[i]);
 		}
 	}
