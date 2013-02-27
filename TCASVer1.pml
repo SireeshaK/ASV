@@ -20,7 +20,7 @@
 	position coordinate;
 
 /* Airplane attributes*/
-	typedef location { byte ix;byte iy;byte iz};
+	typedef location { int x;int y;int z};
 	typedef direction {mtype x;mtype y;mtype z};
 	typedef airplane_motion { location loc; direction dir};
 
@@ -49,38 +49,38 @@
 	   timer=timer%airplane_speed;
 	   if
 	   :: (timer==0)->
-		coordinate.x[myPlane.loc.ix].y[myPlane.loc.iy].z[myPlane.loc.iz] = 0; /*clearing current position in airspace*/
+		coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] = 0; /*clearing current position in airspace*/
 		atomic{
 		if
-		::myPlane.dir.x == increment && myPlane.loc.ix == (x_bound-1) -> myPlane.loc.ix = 0
-		::myPlane.dir.x == increment && myPlane.loc.ix == (x_bound-1) -> myPlane.dir.x = decrement; myPlane.loc.ix--		
-		::myPlane.dir.x == decrement && myPlane.loc.ix == 0 -> myPlane.loc.ix = (x_bound-1)
-		::myPlane.dir.x == decrement && myPlane.loc.ix == 0 -> myPlane.dir.x = increment; myPlane.loc.ix++
-		::myPlane.dir.x == increment && myPlane.loc.ix < (x_bound-1) -> myPlane.loc.ix++ 
-		::myPlane.dir.x == decrement && myPlane.loc.ix > 0 -> myPlane.loc.ix--
+		::myPlane.dir.x == increment && myPlane.loc.x == (x_bound-1) -> myPlane.loc.x = 0
+		::myPlane.dir.x == increment && myPlane.loc.x == (x_bound-1) -> myPlane.dir.x = decrement; myPlane.loc.x--		
+		::myPlane.dir.x == decrement && myPlane.loc.x == 0 -> myPlane.loc.x = (x_bound-1)
+		::myPlane.dir.x == decrement && myPlane.loc.x == 0 -> myPlane.dir.x = increment; myPlane.loc.x++
+		::myPlane.dir.x == increment && myPlane.loc.x < (x_bound-1) -> myPlane.loc.x++ 
+		::myPlane.dir.x == decrement && myPlane.loc.x > 0 -> myPlane.loc.x--
 		::else -> skip
 		fi;
 
 		if
-		::myPlane.dir.y == increment && myPlane.loc.iy == (y_bound-1) -> myPlane.loc.iy = 0
-		::myPlane.dir.y == increment && myPlane.loc.iy == (y_bound-1) -> myPlane.dir.y = decrement; myPlane.loc.iy--		
-		::myPlane.dir.y == decrement && myPlane.loc.iy == 0 -> myPlane.loc.iy = (y_bound-1)
-		::myPlane.dir.y == decrement && myPlane.loc.iy == 0 -> myPlane.dir.y = increment; myPlane.loc.iy++
-		::myPlane.dir.y == increment && myPlane.loc.iy < (y_bound-1) -> myPlane.loc.iy++ 
-		::myPlane.dir.y == decrement && myPlane.loc.iy > 0 -> myPlane.loc.iy--
+		::myPlane.dir.y == increment && myPlane.loc.y == (y_bound-1) -> myPlane.loc.y = 0
+		::myPlane.dir.y == increment && myPlane.loc.y == (y_bound-1) -> myPlane.dir.y = decrement; myPlane.loc.y--		
+		::myPlane.dir.y == decrement && myPlane.loc.y == 0 -> myPlane.loc.y = (y_bound-1)
+		::myPlane.dir.y == decrement && myPlane.loc.y == 0 -> myPlane.dir.y = increment; myPlane.loc.y++
+		::myPlane.dir.y == increment && myPlane.loc.y < (y_bound-1) -> myPlane.loc.y++ 
+		::myPlane.dir.y == decrement && myPlane.loc.y > 0 -> myPlane.loc.y--
 		::else -> skip
 		fi;	
 
 		if
-		::myPlane.dir.z == increment && myPlane.loc.iz == (z_bound-1) -> myPlane.loc.iz = 0
-		::myPlane.dir.z == increment && myPlane.loc.iz == (z_bound-1) -> myPlane.dir.z = decrement; myPlane.loc.iz--		
-		::myPlane.dir.z == decrement && myPlane.loc.iz == 0 -> myPlane.loc.iz = (z_bound-1)
-		::myPlane.dir.z == decrement && myPlane.loc.iz == 0 -> myPlane.dir.z = increment; myPlane.loc.iz++
-		::myPlane.dir.z == increment && myPlane.loc.iz < (z_bound-1) -> myPlane.loc.iz++ 
-		::myPlane.dir.z == decrement && myPlane.loc.iz > 0 -> myPlane.loc.iz--
+		::myPlane.dir.z == increment && myPlane.loc.z == (z_bound-1) -> myPlane.loc.z = 0
+		::myPlane.dir.z == increment && myPlane.loc.z == (z_bound-1) -> myPlane.dir.z = decrement; myPlane.loc.z--		
+		::myPlane.dir.z == decrement && myPlane.loc.z == 0 -> myPlane.loc.z = (z_bound-1)
+		::myPlane.dir.z == decrement && myPlane.loc.z == 0 -> myPlane.dir.z = increment; myPlane.loc.z++
+		::myPlane.dir.z == increment && myPlane.loc.z < (z_bound-1) -> myPlane.loc.z++ 
+		::myPlane.dir.z == decrement && myPlane.loc.z > 0 -> myPlane.loc.z--
 		::else -> skip
 		fi;	
-		coordinate.x[myPlane.loc.ix].y[myPlane.loc.iy].z[myPlane.loc.iz] = _pid; /*updating new position in airspace*/
+		coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] = _pid; /*updating new position in airspace*/
 		}
 	::else->skip;
 	fi;
@@ -118,14 +118,14 @@ airplane_motion myPlane;
 
 /* Initilising the position of airplane in airspace, provided there should not be any airplane assigned to that position already*/
 	L2 :	randnum();
-		myPlane.loc.ix=randNo%x_bound;
+		myPlane.loc.x=randNo%x_bound;
 		randnum();
-		myPlane.loc.iy=randNo%y_bound;
+		myPlane.loc.y=randNo%y_bound;
 		randnum();
-		myPlane.loc.iz=randNo%z_bound;
+		myPlane.loc.z=randNo%z_bound;
 
 	if
-	 	::(coordinate.x[myPlane.loc.ix].y[myPlane.loc.iy].z[myPlane.loc.iz] == 0) -> coordinate.x[myPlane.loc.ix].y[myPlane.loc.iy].z[myPlane.loc.iz]=_pid; 
+	 	::(coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] == 0) -> coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z]=_pid; 
 		::else -> goto L2
 	fi;
 /* Identifying the TA and RA region around the airplane based on the speed*/
@@ -147,6 +147,55 @@ airplane_motion myPlane;
 	   move_plane();
 	:: receiveChan?received_id,receivedPlane_loc;					 /*read a reply message via reply channel*/
 	   move_plane();
+	   /*Identifying if the reply message received plane is in RA or TA*/
+		location RA1_start,RA1_end,RA2_start,RA2_end;
+		
+		/* Identifying RA1 region around the plane*/
+		if
+		::(myPlane.loc.x+RA > x_bound-1) ->
+			if
+			::(myPlane.loc.x == x_bound-1) ->
+				RA1_start.x = myPlane.loc.x%(x_bound-1);
+				RA1_end.x = myPlane.loc.x%(x_bound-1) + (RA-1);
+			::else ->
+				RA1_start.x = myPlane.loc.x +1;
+				RA1_end.x = ((myPlane.loc.x+RA)%(x_bound-1)) - 1;
+			fi;
+		:: else ->
+				RA1_start.x = myPlane.loc.x +1;
+				RA1_end.x = myPlane.loc.x +RA;
+		fi;
+
+		if
+		::(myPlane.loc.y+RA > y_bound-1) ->
+			if
+			::(myPlane.loc.y == y_bound-1) ->
+				RA1_start.y = myPlane.loc.y%(y_bound-1);
+				RA1_end.y = myPlane.loc.y%(y_bound-1) + (RA-1);
+			::else ->
+				RA1_start.y = myPlane.loc.y +1;
+				RA1_end.y = ((myPlane.loc.y+RA)%(y_bound-1)) - 1;
+			fi;
+		:: else ->
+				RA1_start.y = myPlane.loc.y +1;
+				RA1_end.y = myPlane.loc.y +RA;
+		fi;
+
+		if
+		::(myPlane.loc.z+RA > z_bound-1) ->
+			if
+			::(myPlane.loc.z == z_bound-1) ->
+				RA1_start.z = myPlane.loc.z%(z_bound-1);
+				RA1_end.z = myPlane.loc.z%(z_bound-1) + (RA-1);
+			::else ->
+				RA1_start.z = myPlane.loc.z +1;
+				RA1_end.z = ((myPlane.loc.z+RA)%(z_bound-1)) - 1;
+			fi;
+		:: else ->
+				RA1_start.z = myPlane.loc.z +1;
+				RA1_end.z = myPlane.loc.z +RA;
+		fi;
+				
 	od;
 	
 }
