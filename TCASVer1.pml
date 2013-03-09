@@ -1,7 +1,7 @@
 #define x_bound 15
 #define y_bound 15
 #define z_bound 15
-#define NoOfAirplanes 5
+#define NoOfAirplanes 8
 #define kCells 3	
 
 
@@ -19,17 +19,19 @@
 	};
 	position coordinate;
 
+/* Direction declaration*/
+	mtype = {increment,decrement, none};
+
 /* Airplane attributes*/
 	typedef location { int x;int y;int z};
 	typedef direction {mtype x;mtype y;mtype z};
-	typedef airplane_motion { location loc; direction dir};
+	typedef airplane_motion { location loc; direction dir ; byte speed; byte id};
+	mtype = {Climb, Decend, Maintain};
 
 /* Channel declaration*/
 	chan query = [100] of {byte};
 	chan reply[NoOfAirplanes] = [100] of {byte,location}; 		/* Each airplane has its own receive channel */
-
-/* Direction declaration*/
-	mtype = {increment,decrement, none}
+	chan RAmessage[NoOfAirplanes] = [0] of {mtype};
 	
 /* To generate random number between 0- 255 */
 	byte randNo;
@@ -46,7 +48,7 @@
 	inline move_plane()
 	{
 	 timer++;
-	   timer=timer%airplane_speed;
+	   timer=timer%myPlane.speed;
 	   if
 	   :: (timer==0)->
 		coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] = 0; /*clearing current position in airspace*/
@@ -91,12 +93,15 @@
 	fi;
 	}
 
-proctype airplane(chan receiveChan){ 	
+
+
+proctype airplane(chan receiveChan; chan RAmsg){ 	
 airplane_motion myPlane;
 bit collisionOccured = 0;
 /* Identifying the speed for airplane to move*/
-	int airplane_speed;
-	select(airplane_speed : 1..3);
+	byte i;
+	select (i : 1..3);
+	myPlane.speed=i;
 
 /* Identifying the direction for airplane to move */
 	L1 :	if
@@ -136,23 +141,24 @@ bit collisionOccured = 0;
 	fi;
 /* Identifying the TA and RA region around the airplane based on the speed*/
 	int RA,TA;
-	RA=kCells/airplane_speed;
-	TA=(2*kCells)/airplane_speed;	
+	RA=kCells/myPlane.speed;
+	TA=(2*kCells)/myPlane.speed;	
 	
 /* Sending query and receive reply messages */
-	byte query_id,received_id;
-        location receivedPlane_loc;
+	byte query_id;
+	airplane_motion receivedPlane;
 	byte timer;
+	mtype decision;
 	
 	do												 
 	:: query!_pid;									 /*Send the query message through query channel*/
 	   move_plane();										 
 	:: query?query_id;		 			 			 /*Read the query message from query channel*/
 	   move_plane();
-	:: (query_id!=0) && (query_id!=_pid) ->	reply[query_id-1]!_pid,myPlane.loc;      /*send a reply message via reply channel*/
+	:: (query_id!=0) && (query_id!=_pid) ->	reply[query_id-1]!myPlane;	         /*send a reply message via reply channel*/
 	   move_plane();
-	:: receiveChan?received_id,receivedPlane_loc;					 /*read a reply message via reply channel*/
-
+	:: receiveChan?receivedPlane;							 /*read a reply message via reply channel*/
+	
 		
 /* Identifying RA1 region around the plane*/
 	location RA1_start,RA1_end,RA2_start,RA2_end;
@@ -324,54 +330,60 @@ bit collisionOccured = 0;
 /*Identifying if the reply message received plane is in TA region*/
 
 		bit xRA, yRA, zRA, xTA, yTA, zTA, receivedPlaneRA, receivedPlaneTA;
-		int RArecvlocx= ((receivedPlane_loc.x < RA2_end.x) -> (receivedPlane_loc.x + x_bound) : (receivedPlane_loc.x));
-		int RArecvlocy= ((receivedPlane_loc.y < RA2_end.y) -> (receivedPlane_loc.y + y_bound) : (receivedPlane_loc.y));
-		int RArecvlocz= ((receivedPlane_loc.z < RA2_end.z) -> (receivedPlane_loc.z + z_bound) : (receivedPlane_loc.z));
+		int RArecvlocx= ((receivedPlane.loc.x < RA2_end.x) -> (receivedPlane.loc.x + x_bound) : (receivedPlane.loc.x));
+		int RArecvlocy= ((receivedPlane.loc.y < RA2_end.y) -> (receivedPlane.loc.y + y_bound) : (receivedPlane.loc.y));
+		int RArecvlocz= ((receivedPlane.loc.z < RA2_end.z) -> (receivedPlane.loc.z + z_bound) : (receivedPlane.loc.z));
 		if
 		::((RA2_end.x > RA1_end.x) && (RA2_end.x <= RArecvlocx) && (RArecvlocx <= RA1_end.x + x_bound)) -> xRA = 1;
-		::((RA2_end.x < RA1_end.x) && (RA2_end.x <= receivedPlane_loc.x) && (receivedPlane_loc.x <= RA1_end.x)) -> xRA = 1;		
-		::((RA2_end.x == RA1_end.x) && (RA2_end.x == receivedPlane_loc.x)) -> xRA = 1;
+		::((RA2_end.x < RA1_end.x) && (RA2_end.x <= receivedPlane.loc.x) && (receivedPlane.loc.x <= RA1_end.x)) -> xRA = 1;		
+		::((RA2_end.x == RA1_end.x) && (RA2_end.x == receivedPlane.loc.x)) -> xRA = 1;
 		::else -> xRA = 0;
 		fi;
 
 		if
 		::((RA2_end.y > RA1_end.y) && (RA2_end.y <= RArecvlocy) && (RArecvlocy <= RA1_end.y + y_bound)) -> yRA = 1;
-		::((RA2_end.y < RA1_end.y) && (RA2_end.y <= receivedPlane_loc.y) && (receivedPlane_loc.y <= RA1_end.y)) -> yRA = 1;		
-		::((RA2_end.y == RA1_end.y) && (RA2_end.y == receivedPlane_loc.y)) -> yRA = 1;
+		::((RA2_end.y < RA1_end.y) && (RA2_end.y <= receivedPlane.loc.y) && (receivedPlane.loc.y <= RA1_end.y)) -> yRA = 1;		
+		::((RA2_end.y == RA1_end.y) && (RA2_end.y == receivedPlane.loc.y)) -> yRA = 1;
 		::else -> yRA = 0;
 		fi;
 		
 		if
 		::((RA2_end.z > RA1_end.z) && (RA2_end.z <= RArecvlocz) && (RArecvlocz <= RA1_end.z + z_bound)) -> zRA = 1;
-		::((RA2_end.z < RA1_end.z) && (RA2_end.z <= receivedPlane_loc.z) && (receivedPlane_loc.z <= RA1_end.z)) -> zRA = 1;		
-		::((RA2_end.z == RA1_end.z) && (RA2_end.z == receivedPlane_loc.z)) -> zRA = 1;
+		::((RA2_end.z < RA1_end.z) && (RA2_end.z <= receivedPlane.loc.z) && (receivedPlane.loc.z <= RA1_end.z)) -> zRA = 1;		
+		::((RA2_end.z == RA1_end.z) && (RA2_end.z == receivedPlane.loc.z)) -> zRA = 1;
 		::else -> zRA = 0;
 		fi;
 
 		if
 		::xRA == 1 && yRA == 1 && zRA == 1 -> receivedPlaneRA = 1;
+		  if
+		  :: decision = Climb;
+		  :: decision = Decend;
+		  :: decision = Maintain;
+		  fi;
+		  RAmsg[receivedPlane.id-1]!decision;		  
 		:: else -> 
-			int TArecvlocx= ((receivedPlane_loc.x < TA2_end.x) -> (receivedPlane_loc.x + x_bound) : (receivedPlane_loc.x));
-			int TArecvlocy= ((receivedPlane_loc.y < TA2_end.y) -> (receivedPlane_loc.y + y_bound) : (receivedPlane_loc.y));
-			int TArecvlocz= ((receivedPlane_loc.z < TA2_end.z) -> (receivedPlane_loc.z + z_bound) : (receivedPlane_loc.z));
+			int TArecvlocx= ((receivedPlane.loc.x < TA2_end.x) -> (receivedPlane.loc.x + x_bound) : (receivedPlane.loc.x));
+			int TArecvlocy= ((receivedPlane.loc.y < TA2_end.y) -> (receivedPlane.loc.y + y_bound) : (receivedPlane.loc.y));
+			int TArecvlocz= ((receivedPlane.loc.z < TA2_end.z) -> (receivedPlane.loc.z + z_bound) : (receivedPlane.loc.z));
 			if
 			::((TA2_end.x > TA1_end.x) && (TA2_end.x <= TArecvlocx) && (TArecvlocx <= TA1_end.x + x_bound)) -> xTA = 1;
-			::((TA2_end.x < TA1_end.x) && (TA2_end.x <= receivedPlane_loc.x) && (receivedPlane_loc.x <= TA1_end.x)) -> xTA = 1;		
-			::((TA2_end.x == TA1_end.x) && (TA2_end.x == receivedPlane_loc.x)) -> xTA = 1;
+			::((TA2_end.x < TA1_end.x) && (TA2_end.x <= receivedPlane.loc.x) && (receivedPlane.loc.x <= TA1_end.x)) -> xTA = 1;		
+			::((TA2_end.x == TA1_end.x) && (TA2_end.x == receivedPlane.loc.x)) -> xTA = 1;
 			::else -> xTA = 0;
 			fi;
 
 			if
 			::((TA2_end.y > TA1_end.y) && (TA2_end.y <= TArecvlocy) && (TArecvlocy <= TA1_end.y + y_bound)) -> yTA = 1;
-			::((TA2_end.y < TA1_end.y) && (TA2_end.y <= receivedPlane_loc.y) && (receivedPlane_loc.y <= TA1_end.y)) -> yTA = 1;		
-			::((TA2_end.y == TA1_end.y) && (TA2_end.y == receivedPlane_loc.y)) -> yTA = 1;
+			::((TA2_end.y < TA1_end.y) && (TA2_end.y <= receivedPlane.loc.y) && (receivedPlane.loc.y <= TA1_end.y)) -> yTA = 1;		
+			::((TA2_end.y == TA1_end.y) && (TA2_end.y == receivedPlane.loc.y)) -> yTA = 1;
 			::else -> yTA = 0;
 			fi;
 		
 			if
 			::((TA2_end.z > TA1_end.z) && (TA2_end.z <= TArecvlocz) && (TArecvlocz <= TA1_end.z + z_bound)) -> zTA = 1;
-			::((TA2_end.z < TA1_end.z) && (TA2_end.z <= receivedPlane_loc.z) && (receivedPlane_loc.z <= TA1_end.z)) -> zTA = 1;		
-			::((TA2_end.z == TA1_end.z) && (TA2_end.z == receivedPlane_loc.z)) -> zTA = 1;
+			::((TA2_end.z < TA1_end.z) && (TA2_end.z <= receivedPlane.loc.z) && (receivedPlane.loc.z <= TA1_end.z)) -> zTA = 1;		
+			::((TA2_end.z == TA1_end.z) && (TA2_end.z == receivedPlane.loc.z)) -> zTA = 1;
 			::else -> zTA = 0;
 			fi;
 
@@ -379,6 +391,14 @@ bit collisionOccured = 0;
 			xTA == 1 && yTA == 1 && zTA == 1 -> receivedPlaneTA = 1;
 		fi;
 		move_plane();
+	::RAmsg?Climb;
+	  myPlane.dir.z=decrement;
+	  move_plane();
+	::RAmsg?Decend;
+	  myPlane.dir.z=increment;
+	  move_plane();
+	::RAmsg?Maintain;
+	  move_plane();  
 				
 	od unless {collisionOccured == 1 -> skip};
 	
@@ -388,7 +408,7 @@ init {
 byte i;
 	atomic {
 		for(i : 0..(NoOfAirplanes-1)) {
-			run airplane(reply[i]);
+			run airplane(reply[i], RAmessage[i]);
 		}
 	}
 }
