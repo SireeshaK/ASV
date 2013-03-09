@@ -1,7 +1,7 @@
 #define x_bound 15
 #define y_bound 15
 #define z_bound 15
-#define NoOfAirplanes 8
+#define NoOfAirplanes 12
 #define kCells 3	
 
 
@@ -20,19 +20,18 @@
 	position coordinate;	
 
 /* Direction declaration*/
-	mtype = {increment,decrement, none};
+	mtype = {increment, decrement, none, Climb, Maintain, Decend, Collision, Traffic};
 
 /* Airplane attributes*/
 	typedef location { int x;int y;int z};
 	typedef direction {mtype x;mtype y;mtype z};
 	typedef airplane_data { location loc; direction dir ; byte speed; byte id};
-	mtype = {Climb, Decend, Maintain, collision};
 
 /* Channel declaration*/
-	chan query = [100] of {byte};
+	chan query = [1000] of {byte};
 	chan reply[NoOfAirplanes] = [100] of {airplane_data}; 		/* Each airplane has its own receive channel */
 	chan RAmessage[NoOfAirplanes] = [0] of {mtype};				/*synchronous channel for RA messages */
-	
+	chan TAmessage[NoOfAirplanes] = [0] of {mtype};				/*synchronous channel for TA messages */
 /* To generate random number between 0- 255 to assing initial position of airplane */
 	byte randNo;
 	inline randnum()
@@ -47,12 +46,12 @@
 /* Movement of airplane in airspace based on direction*/
 	inline move_plane()
 	{
-	   timer++;
-	   timer=timer%myPlane.speed;
-	   if
-	   :: (timer==0)->
+	timer++;
+	timer=timer%myPlane.speed;
+	if
+	:: (timer==0)->
+		atomic {
 		coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] = 0; /*clearing current position in airspace*/
-		atomic{
 		if
 		::myPlane.dir.x == increment && myPlane.loc.x == (x_bound-1) -> myPlane.loc.x = 0
 		::myPlane.dir.x == increment && myPlane.loc.x == (x_bound-1) -> myPlane.dir.x = decrement; myPlane.loc.x--		
@@ -82,12 +81,14 @@
 		::myPlane.dir.z == decrement && myPlane.loc.z > 0 -> myPlane.loc.z--
 		::else -> skip
 		fi;
-	
+
 		if
-		:: (coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z]==0) ->
-		coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] = _pid; 	/*updating new position in airspace*/
-		:: else -> RAmsg[receivedPlane.id-1]!collision;				/*If there is already a plane in the region when moved then planes collied */ 
-		collisionOccured = 1;
+		:: (coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] == 0) ->
+			coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] = _pid; 	/*updating new position in airspace*/
+		:: else -> /*If there is already a plane in the region when moved then planes collied */ 
+		 	collidedPid = coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z];
+			RAmessage[collidedPid - 1]!Collision;
+			break;
 		fi;
 		}
 	::else->skip;
@@ -96,9 +97,12 @@
 
 
 
-proctype airplane(chan receiveChan; chan RAmsg){ 	
+proctype airplane(chan receiveChan; chan RAmsg; chan TAmsg){ 	
 airplane_data myPlane;
 bit collisionOccured = 0;
+byte collidedPid;
+
+	myPlane.id=_pid;
 
 /* Identifying the speed for airplane to move*/
 	hidden byte i;
@@ -152,12 +156,17 @@ L2 :	randnum();
 	airplane_data receivedPlane;
 	mtype decision;
 	
-	do												 
+L3:	do												 
 	::query!_pid;									 /*Send the query message through query channel*/
-	  move_plane();										 
+	  move_plane();	
+									 
 	::query?query_id;		 			 			 /*Read the query message from query channel*/
-	  query_id!=_pid -> reply[query_id-1]!myPlane;	      				 /*send a reply message via reply channel*/
+	  if
+	  ::query_id!=_pid -> reply[query_id-1]!myPlane;
+	  ::else					      				 /*send a reply message via reply channel*/
+	  fi;	  
 	  move_plane();
+
 	::receiveChan?receivedPlane;							 /*read a reply message via reply channel*/
 	  /*Identifying RA1 region around my plane. RA1 and RA2 start and end represents the boundaries of RA region on either side of my plane*/
 	  location RA1_start,RA1_end,RA2_start,RA2_end;
@@ -257,15 +266,16 @@ L2 :	randnum();
 		::else -> zRA = 0;
 		fi;
 
+		receivedPlaneRA = 0;
+		decision = 0;
 		if
-		::xRA == 1 && yRA == 1 && zRA == 1 -> 
+		::xRA == 1 && yRA == 1 && zRA == 1 -> decision = Climb;
 		  receivedPlaneRA = 1;
-		  if
-		  :: decision = Climb;
-		  :: decision = Decend;
-		  :: decision = Maintain;
-		  fi;
-		  RAmsg[receivedPlane.id-1]!decision;			/* Sending the RA decision to other plane	  
+		::xRA == 1 && yRA == 1 && zRA == 1 -> decision = Decend;
+		  receivedPlaneRA = 1;
+		::xRA == 1 && yRA == 1 && zRA == 1 -> decision = Maintain;
+		  receivedPlaneRA = 1;
+		    
 		:: else -> 
 			/*Identifying if the reply message received plane is in TA region*/
 			int TArecvlocx= ((receivedPlane.loc.x < TA2_end.x) -> (receivedPlane.loc.x + x_bound) : (receivedPlane.loc.x));
@@ -292,30 +302,62 @@ L2 :	randnum();
 			::else -> zTA = 0;
 			fi;
 
-
-			xTA == 1 && yTA == 1 && zTA == 1 -> receivedPlaneTA = 1;
+			if
+			::(xTA == 1 && yTA == 1 && zTA == 1) -> receivedPlaneTA = 1;
+			::else -> receivedPlaneTA = 0;
+			fi;
 		fi;
 		move_plane();
-	::RAmsg?Climb;
-	  myPlane.dir.z=decrement;
-	  move_plane();
-	::RAmsg?Decend;
-	  myPlane.dir.z=increment;
-	  move_plane();
-	::RAmsg?Maintain;
-	  move_plane();
-	::RAmsg?collision;
-	  collisionOccured == 1; 
-				
-	od unless {collisionOccured == 1};
+
 	
+		
+	od unless{
+		if
+		:: receivedPlaneRA == 1 -> RAmessage[receivedPlane.id-1]!decision;
+		   if
+			::decision == Climb -> myPlane.dir.z=increment;
+			::decision == Decend -> myPlane.dir.z=decrement;
+			::else
+		   fi;
+		   receivedPlaneRA = 0;
+		   move_plane();
+		   goto L3
+		   
+		:: receivedPlaneTA == 1 -> TAmessage[receivedPlane.id-1]!Traffic;
+		   receivedPlaneTA = 0;
+		   move_plane();
+		   goto L3
+	
+		::RAmsg?Climb;
+		  myPlane.dir.z=decrement;
+		  move_plane();
+		  goto L3
+
+		::RAmsg?Decend;
+		  myPlane.dir.z=increment;
+		  move_plane();
+		  goto L3
+
+		::RAmsg?Maintain;
+		  move_plane();
+		  goto L3
+
+		::TAmsg?Traffic;
+		  move_plane();
+		  goto L3
+
+		::RAmsg?Collision;
+		  coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z]=0;
+		fi;
+
+		};
 }
 
 init {
 byte i;
 	atomic {
 		for(i : 0..(NoOfAirplanes-1)) {
-			run airplane(reply[i], RAmessage[i]);
+			run airplane(reply[i], RAmessage[i], TAmessage[i]);
 		}
 	}
 }
