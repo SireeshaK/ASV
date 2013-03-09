@@ -5,7 +5,7 @@
 #define kCells 3	
 
 
-/* Airspace declartion */
+/* Airspace declartion */	/*A co-ordinate in the airspace can be accessed like x[1].y[0].z[4]*/
 	typedef y_array {
 		byte z[z_bound]
 	};
@@ -15,9 +15,9 @@
 	};
 
 	typedef position  {
-	  x_array x[x_bound]  					/*A co-ordinate in the airspace can be accessed like x[1].y[0].z[4]*/
+	  x_array x[x_bound]  					
 	};
-	position coordinate;
+	position coordinate;	
 
 /* Direction declaration*/
 	mtype = {increment,decrement, none};
@@ -25,29 +25,29 @@
 /* Airplane attributes*/
 	typedef location { int x;int y;int z};
 	typedef direction {mtype x;mtype y;mtype z};
-	typedef airplane_motion { location loc; direction dir ; byte speed; byte id};
-	mtype = {Climb, Decend, Maintain};
+	typedef airplane_data { location loc; direction dir ; byte speed; byte id};
+	mtype = {Climb, Decend, Maintain, collision};
 
 /* Channel declaration*/
 	chan query = [100] of {byte};
-	chan reply[NoOfAirplanes] = [100] of {byte,location}; 		/* Each airplane has its own receive channel */
-	chan RAmessage[NoOfAirplanes] = [0] of {mtype};
+	chan reply[NoOfAirplanes] = [100] of {airplane_data}; 		/* Each airplane has its own receive channel */
+	chan RAmessage[NoOfAirplanes] = [0] of {mtype};				/*synchronous channel for RA messages */
 	
-/* To generate random number between 0- 255 */
+/* To generate random number between 0- 255 to assing initial position of airplane */
 	byte randNo;
 	inline randnum()
-		{
+	{
 		do
 		:: randNo++		
 		:: (randNo>0) -> randNo--
 		:: break	
 		od;
-		}	
+	}	
 
 /* Movement of airplane in airspace based on direction*/
 	inline move_plane()
 	{
-	 timer++;
+	   timer++;
 	   timer=timer%myPlane.speed;
 	   if
 	   :: (timer==0)->
@@ -85,8 +85,9 @@
 	
 		if
 		:: (coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z]==0) ->
-		coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] = _pid; /*updating new position in airspace*/
-		:: else -> collisionOccured = 1;
+		coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] = _pid; 	/*updating new position in airspace*/
+		:: else -> RAmsg[receivedPlane.id-1]!collision;				/*If there is already a plane in the region when moved then planes collied */ 
+		collisionOccured = 1;
 		fi;
 		}
 	::else->skip;
@@ -96,238 +97,140 @@
 
 
 proctype airplane(chan receiveChan; chan RAmsg){ 	
-airplane_motion myPlane;
+airplane_data myPlane;
 bit collisionOccured = 0;
+
 /* Identifying the speed for airplane to move*/
-	byte i;
+	hidden byte i;
 	select (i : 1..3);
 	myPlane.speed=i;
 
 /* Identifying the direction for airplane to move */
-	L1 :	if
-		::myPlane.dir.x=increment
-		::myPlane.dir.x=decrement
-		::myPlane.dir.x=none
-		fi;
-
-		if
-		::myPlane.dir.y=increment
-		::myPlane.dir.y=decrement
-		::myPlane.dir.y=none
-		fi;
-
-		if
-		::myPlane.dir.z=increment
-		::myPlane.dir.z=decrement
-		::myPlane.dir.z=none
-		fi;
+L1 :	if
+	::myPlane.dir.x=increment
+	::myPlane.dir.x=decrement
+	::myPlane.dir.x=none
+	fi;
 
 	if
-	 	::(myPlane.dir.x==none) && (myPlane.dir.y==none) && (myPlane.dir.z==none)-> goto L1
-		::else -> skip
+	::myPlane.dir.y=increment
+	::myPlane.dir.y=decrement
+	::myPlane.dir.y=none
+	fi;
+
+	if
+	::myPlane.dir.z=increment
+	::myPlane.dir.z=decrement
+	::myPlane.dir.z=none
+	fi;
+
+	if
+ 	::(myPlane.dir.x==none) && (myPlane.dir.y==none) && (myPlane.dir.z==none)-> goto L1
+	::else -> skip
 	fi;			
 
-/* Initilising the position of airplane in airspace, provided there should not be any airplane assigned to that position already*/
-	L2 :	randnum();
-		myPlane.loc.x=randNo%x_bound;
-		randnum();
-		myPlane.loc.y=randNo%y_bound;
-		randnum();
-		myPlane.loc.z=randNo%z_bound;
+/* Initialising the position of airplane in airspace, provided there should not be any airplane assigned to that position already*/
+L2 :	randnum();
+	myPlane.loc.x=randNo%x_bound;
+	randnum();
+	myPlane.loc.y=randNo%y_bound;
+	randnum();
+	myPlane.loc.z=randNo%z_bound;
 
 	if
-	 	::(coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] == 0) -> coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z]=_pid; 
-		::else -> goto L2
+ 	::(coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] == 0) -> coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z]=_pid; 
+	::else -> goto L2
 	fi;
+
 /* Identifying the TA and RA region around the airplane based on the speed*/
 	int RA,TA;
 	RA=kCells/myPlane.speed;
 	TA=(2*kCells)/myPlane.speed;	
 	
-/* Sending query and receive reply messages */
-	byte query_id;
-	airplane_motion receivedPlane;
-	byte timer;
+/* Send query and receive reply */
+	byte query_id, timer;
+	airplane_data receivedPlane;
 	mtype decision;
 	
 	do												 
-	:: query!_pid;									 /*Send the query message through query channel*/
-	   move_plane();										 
-	:: query?query_id;		 			 			 /*Read the query message from query channel*/
-	   move_plane();
-	:: (query_id!=0) && (query_id!=_pid) ->	reply[query_id-1]!myPlane;	         /*send a reply message via reply channel*/
-	   move_plane();
-	:: receiveChan?receivedPlane;							 /*read a reply message via reply channel*/
+	::query!_pid;									 /*Send the query message through query channel*/
+	  move_plane();										 
+	::query?query_id;		 			 			 /*Read the query message from query channel*/
+	  query_id!=_pid -> reply[query_id-1]!myPlane;	      				 /*send a reply message via reply channel*/
+	  move_plane();
+	::receiveChan?receivedPlane;							 /*read a reply message via reply channel*/
+	  /*Identifying RA1 region around my plane. RA1 and RA2 start and end represents the boundaries of RA region on either side of my plane*/
+	  location RA1_start,RA1_end,RA2_start,RA2_end;
+		RA1_start.x =myPlane.loc.x+1;
+		RA1_end.x = myPlane.loc.x+RA;
+		RA1_start.y =myPlane.loc.y+1;
+		RA1_end.y = myPlane.loc.y+RA;
+		RA1_start.z =myPlane.loc.z+1;
+		RA1_end.z = myPlane.loc.z+RA;
+		do
+		::RA1_start.x >= x_bound -> RA1_start.x = RA1_start.x - x_bound;
+		::RA1_start.y >= y_bound -> RA1_start.y = RA1_start.y - y_bound;
+		::RA1_start.z >= z_bound -> RA1_start.z = RA1_start.z - z_bound;
+		::RA1_end.x >= x_bound -> RA1_end.x = RA1_end.x - x_bound;
+		::RA1_end.y >= y_bound -> RA1_end.y = RA1_end.y - y_bound;
+		::RA1_end.z >= z_bound -> RA1_end.z = RA1_end.z - z_bound;
+		::RA1_start.x<x_bound && RA1_start.y<y_bound && RA1_start.z<z_bound && RA1_end.x<x_bound && RA1_end.y<y_bound && RA1_end.z<z_bound -> break
+		od;
 	
-		
-/* Identifying RA1 region around the plane*/
-	location RA1_start,RA1_end,RA2_start,RA2_end;
-		if
-		::(myPlane.loc.x+RA > x_bound-1) ->
-			if
-			::(myPlane.loc.x == x_bound-1) ->
-				RA1_start.x =((myPlane.loc.x+RA)%(x_bound-1)) - RA;
-				RA1_end.x = ((myPlane.loc.x+RA)%(x_bound-1)) - 1;
-			::else ->
-				RA1_start.x = myPlane.loc.x +1;
-				RA1_end.x = ((myPlane.loc.x+RA)%(x_bound-1)) - 1;
-			fi;
-		:: else ->
-				RA1_start.x = myPlane.loc.x +1;
-				RA1_end.x = myPlane.loc.x +RA;
-		fi;
-
-		if
-		::(myPlane.loc.y+RA > y_bound-1) ->
-			if
-			::(myPlane.loc.y == y_bound-1) ->
-				RA1_start.y = ((myPlane.loc.y+RA)%(y_bound-1)) - RA;
-				RA1_end.y = ((myPlane.loc.y+RA)%(y_bound-1)) - 1;
-			::else ->
-				RA1_start.y = myPlane.loc.y +1;
-				RA1_end.y = ((myPlane.loc.y+RA)%(y_bound-1)) - 1;
-			fi;
-		:: else ->
-				RA1_start.y = myPlane.loc.y +1;
-				RA1_end.y = myPlane.loc.y +RA;
-		fi;
-
-		if
-		::(myPlane.loc.z+RA > z_bound-1) ->
-			if
-			::(myPlane.loc.z == z_bound-1) ->
-				RA1_start.z = ((myPlane.loc.z+RA)%(z_bound-1)) - RA;
-				RA1_end.z = ((myPlane.loc.z+RA)%(z_bound-1)) - 1;
-			::else ->
-				RA1_start.z = myPlane.loc.z +1;
-				RA1_end.z = ((myPlane.loc.z+RA)%(z_bound-1)) - 1;
-			fi;
-		:: else ->
-				RA1_start.z = myPlane.loc.z +1;
-				RA1_end.z = myPlane.loc.z +RA;
-		fi;
-
-/* Identifying RA2 region around the plane*/
-		if
-		::(myPlane.loc.x-RA < 0 ) ->
-			if
-			::(myPlane.loc.x == 0) ->
-				RA2_start.x = myPlane.loc.x+(x_bound-1);
-				RA2_end.x = (myPlane.loc.x+(x_bound-1))-(RA-1);
-			::else ->
-				RA2_start.x = myPlane.loc.x -1;
-				RA2_end.x = (myPlane.loc.x+(x_bound-1))-(RA-1);
-			fi;
-		:: else ->
-				RA2_start.x = myPlane.loc.x -1;
-				RA2_end.x = myPlane.loc.x -RA;
-		fi;
-
-		if
-		::(myPlane.loc.y-RA < 0 ) ->
-			if
-			::(myPlane.loc.y == 0) ->
-				RA2_start.y = myPlane.loc.y+(y_bound-1);
-				RA2_end.y = (myPlane.loc.y+(y_bound-1))-(RA-1);
-			::else ->
-				RA2_start.y = myPlane.loc.y -1;
-				RA2_end.y = (myPlane.loc.y+(y_bound-1))-(RA-1);
-			fi;
-		:: else ->
-				RA2_start.y = myPlane.loc.y -1;
-				RA2_end.y = myPlane.loc.y -RA;
-		fi;
-
-		if
-		::(myPlane.loc.z-RA < 0 ) ->
-			if
-			::(myPlane.loc.z == 0) ->
-				RA2_start.z = myPlane.loc.z+(z_bound-1);
-				RA2_end.z = (myPlane.loc.z+(z_bound-1))-(RA-1);
-			::else ->
-				RA2_start.z = myPlane.loc.z -1;
-				RA2_end.z = (myPlane.loc.z+(z_bound-1))-(RA-1);
-			fi;
-		:: else ->
-				RA2_start.z = myPlane.loc.z -1;
-				RA2_end.z = myPlane.loc.z -RA;
-		fi;
-
+	  /* Identifying RA2 region around the plane*/
+		RA2_start.x =(myPlane.loc.x-1);
+		RA2_end.x = (myPlane.loc.x-RA);
+		RA2_start.y =(myPlane.loc.y-1);
+		RA2_end.y = (myPlane.loc.y-RA);
+		RA2_start.z =(myPlane.loc.z-1);
+		RA2_end.z = (myPlane.loc.z-RA);
+		do
+		::RA2_start.x < 0 -> RA2_start.x = RA2_start.x + x_bound;
+		::RA2_start.y < 0 -> RA2_start.y = RA2_start.y + y_bound;
+		::RA2_start.z < 0 -> RA2_start.z = RA2_start.z + z_bound;
+		::RA2_end.x < 0 -> RA2_end.x = RA2_end.x + x_bound;
+		::RA2_end.y < 0 -> RA2_end.y = RA2_end.y + y_bound;
+		::RA2_end.z < 0 -> RA2_end.z = RA2_end.z + z_bound;
+		::RA2_start.x>=0 && RA2_start.y>=0 && RA2_start.z>=0 && RA2_end.x>=0 && RA2_end.y>=0 && RA2_end.z>=0 -> break
+		od;
 	
-		
-/* Identifying TA1 region around the plane*/
+	/* Identifying TA1 region around the plane*/
 	location TA1_start,TA1_end,TA2_start,TA2_end;
+		TA1_start.x=RA1_end.x+1;
+		TA1_end.x=RA1_end.x+(TA-RA);
+		TA1_start.y=RA1_end.y+1;
+		TA1_end.y=RA1_end.y+(TA-RA);
+		TA1_start.z=RA1_end.z+1;
+		TA1_end.z=RA1_end.z+(TA-RA);
+		do
+		::TA1_start.x >= x_bound -> TA1_start.x = TA1_start.x - x_bound;
+		::TA1_start.y >= y_bound -> TA1_start.y = TA1_start.y - y_bound;
+		::TA1_start.z >= z_bound -> TA1_start.z = TA1_start.z - z_bound;
+		::TA1_end.x >= x_bound -> TA1_end.x = TA1_end.x - x_bound;
+		::TA1_end.y >= y_bound -> TA1_end.y = TA1_end.y - y_bound;
+		::TA1_end.z >= z_bound -> TA1_end.z = TA1_end.z - z_bound;
+		::TA1_start.x<x_bound && TA1_start.y<y_bound && TA1_start.z<z_bound && TA1_end.x<x_bound && TA1_end.y<y_bound && TA1_end.z<z_bound -> break
+		od;
 		
-		TA1_start.x=(RA1_end.x+1);
-		TA1_end.x=(RA1_end.x+(TA-RA));
-		if
-		:: (TA1_start.x>x_bound-1) -> TA1_start.x=(TA1_start.x-x_bound);
-		:: else-> 	skip;
-		fi;
-		if
-		:: (TA1_end.x>x_bound-1) -> TA1_end.x=(TA1_end.x-x_bound);
-		:: else -> skip;
-		fi;
-
-		TA1_start.y=(RA1_end.y+1);
-		TA1_end.y=(RA1_end.y+(TA-RA));
-		if
-		:: (TA1_start.y>y_bound-1) -> TA1_start.y=(TA1_start.y-y_bound);
-		:: else-> 	skip;
-		fi;
-		if
-		:: (TA1_end.y>y_bound-1) -> TA1_end.y=(TA1_end.y-y_bound);
-		:: else -> skip;
-		fi;
-
-		TA1_start.z=(RA1_end.z+1);
-		TA1_end.z=(RA1_end.z+(TA-RA));
-		if
-		:: (TA1_start.z>z_bound-1) -> TA1_start.z=(TA1_start.z-z_bound);
-		:: else-> 	skip;
-		fi;
-		if
-		:: (TA1_end.z>z_bound-1) -> TA1_end.z=(TA1_end.z-z_bound);
-		:: else -> skip;
-		fi;
 		
-/* Identifying TA2 region around the plane*/
-
-		TA2_start.x=(RA2_end.x-1);
-		TA2_end.x=(RA2_end.x-(TA-RA));
-		if
-		:: (TA2_start.x<0) -> TA2_start.x=(TA2_start.x+x_bound);
-		:: else-> 	skip;
-		fi;
-		if
-		:: (TA2_end.x<0) -> TA2_end.x=(TA2_end.x+x_bound);
-		:: else -> skip;
-		fi;
-
-		TA2_start.y=(RA2_end.y-1);
-		TA2_end.y=(RA2_end.y-(TA-RA));
-		if
-		:: (TA2_start.y<0) -> TA2_start.y=(TA2_start.y+y_bound);
-		:: else-> 	skip;
-		fi;
-		if
-		:: (TA2_end.y<0) -> TA2_end.y=(TA2_end.y+y_bound);
-		:: else -> skip;
-		fi;
-
-		TA2_start.z=(RA2_end.z-1);
-		TA2_end.z=(RA2_end.z-(TA-RA));
-		if
-		:: (TA2_start.z<0) -> TA2_start.z=(TA2_start.z+z_bound);
-		:: else-> skip;
-		fi;
-		if
-		:: (TA2_end.z<0) -> TA2_end.z=(TA2_end.z+z_bound);
-		:: else -> skip;
-		fi;
+	/* Identifying TA2 region around the plane*/
+		TA2_start.x=RA2_end.x-1;
+		TA2_end.x=RA2_end.x-(TA-RA);
+		TA2_start.y=RA2_end.y-1;
+		TA2_end.y=RA2_end.y-(TA-RA);
+		TA2_start.z=RA2_end.z-1;
+		TA2_end.z=RA2_end.z-(TA-RA);
+		do
+		::TA2_start.x < 0 -> TA2_start.x = TA2_start.x + x_bound;
+		::TA2_start.y < 0 -> TA2_start.y = TA2_start.y + y_bound;
+		::TA2_start.z < 0 -> TA2_start.z = TA2_start.z + z_bound;
+		::TA2_end.x < 0 -> TA2_end.x = TA2_end.x + x_bound;
+		::TA2_end.y < 0 -> TA2_end.y = TA2_end.y + y_bound;
+		::TA2_end.z < 0 -> TA2_end.z = TA2_end.z + z_bound;
+		::TA2_start.x>=0 && TA2_start.y>=0 && TA2_start.z>=0 && TA2_end.x>=0 && TA2_end.y>=0 && TA2_end.z>=0 -> break
+		od;
 		
 /*Identifying if the reply message received plane is in RA region*/
-/*Identifying if the reply message received plane is in TA region*/
 
 		bit xRA, yRA, zRA, xTA, yTA, zTA, receivedPlaneRA, receivedPlaneTA;
 		int RArecvlocx= ((receivedPlane.loc.x < RA2_end.x) -> (receivedPlane.loc.x + x_bound) : (receivedPlane.loc.x));
@@ -355,14 +258,16 @@ bit collisionOccured = 0;
 		fi;
 
 		if
-		::xRA == 1 && yRA == 1 && zRA == 1 -> receivedPlaneRA = 1;
+		::xRA == 1 && yRA == 1 && zRA == 1 -> 
+		  receivedPlaneRA = 1;
 		  if
 		  :: decision = Climb;
 		  :: decision = Decend;
 		  :: decision = Maintain;
 		  fi;
-		  RAmsg[receivedPlane.id-1]!decision;		  
+		  RAmsg[receivedPlane.id-1]!decision;			/* Sending the RA decision to other plane	  
 		:: else -> 
+			/*Identifying if the reply message received plane is in TA region*/
 			int TArecvlocx= ((receivedPlane.loc.x < TA2_end.x) -> (receivedPlane.loc.x + x_bound) : (receivedPlane.loc.x));
 			int TArecvlocy= ((receivedPlane.loc.y < TA2_end.y) -> (receivedPlane.loc.y + y_bound) : (receivedPlane.loc.y));
 			int TArecvlocz= ((receivedPlane.loc.z < TA2_end.z) -> (receivedPlane.loc.z + z_bound) : (receivedPlane.loc.z));
@@ -398,9 +303,11 @@ bit collisionOccured = 0;
 	  myPlane.dir.z=increment;
 	  move_plane();
 	::RAmsg?Maintain;
-	  move_plane();  
+	  move_plane();
+	::RAmsg?collision;
+	  collisionOccured == 1; 
 				
-	od unless {collisionOccured == 1 -> skip};
+	od unless {collisionOccured == 1};
 	
 }
 
