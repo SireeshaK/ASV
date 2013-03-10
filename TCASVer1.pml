@@ -351,6 +351,14 @@ L3:	do
 		fi;
 
 		};
+
+	do
+	::TAmsg?Traffic;
+	::RAmsg?Maintain;
+	::RAmsg?Decend;
+	::RAmsg?Climb;
+	::else
+	od;
 }
 
 init {
