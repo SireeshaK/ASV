@@ -3,8 +3,6 @@
 #define z_bound 6
 #define NoOfAirplanes 3
 #define kCells 3		/*No of cells to define RA & TA */
-#define p (len(query) > 0)	
-
 
 /* Airspace declartion */	/*A co-ordinate in the airspace can be accessed like x[1].y[0].z[4]*/
 	typedef y_array {
@@ -31,9 +29,13 @@
 
 /* Channel declaration*/
 	chan query = [1000] of {byte};
-	chan reply[NoOfAirplanes] = [100] of {airplane_data}; 		/* Each airplane has its own receive channel */
+	chan reply[NoOfAirplanes] = [100] of {airplane_data}; 			/* Each airplane has its own receive channel */
 	chan RAmessage[NoOfAirplanes] = [0] of {mtype};				/*synchronous channel for RA messages */
 	chan TAmessage[NoOfAirplanes] = [0] of {mtype};				/*synchronous channel for TA messages */
+
+/*Global variable to check if the other plane is dead*/
+	bit dead[NoOfAirplanes];
+
 /* To generate random number between 0- 255 to assing initial position of airplane */
 	
 	inline randnum()
@@ -89,6 +91,7 @@
 		:: (coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] == 0) ->
 			coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] = _pid; 	/*updating new position in airspace*/
 		:: else -> /*If there is already a plane in the region when moved then planes collied */ 
+			dead[_pid-1]=1;
 		 	collidedPid = coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z];
 			RAmessage[collidedPid - 1]!Collision;
 			break;
@@ -317,12 +320,11 @@ L3:	do
 			::else -> receivedPlaneTA = 0;
 			fi;
 		fi;
-		assert(!(receivedPlaneRA == 1 && receivedPlaneTA == 1)); /* verifies if a recived plane is not in RA and TA region at sam time */
 		move_plane();
 			
 	od unless{
-		if
-		:: receivedPlaneRA == 1 -> RAmessage[receivedPlane.id-1]!decision;
+		if	/*Send RA and TA msg only if the otherplane is alive*/
+		:: (receivedPlaneRA == 1 && dead[receivedPlane.id-1]==0) -> RAmessage[receivedPlane.id-1]!decision;
 		   if
 			::decision == Climb -> myPlane.dir.z=increment;
 			::decision == Decend -> myPlane.dir.z=decrement;
@@ -332,7 +334,7 @@ L3:	do
 		   move_plane();
 		   goto L3
 		   
-		:: receivedPlaneTA == 1 -> TAmessage[receivedPlane.id-1]!Traffic;
+		:: (receivedPlaneTA == 1 && dead[receivedPlane.id-1]==0) -> TAmessage[receivedPlane.id-1]!Traffic;
 		   receivedPlaneTA = 0;
 		   move_plane();
 		   goto L3
@@ -357,23 +359,15 @@ L3:	do
 
 		::RAmsg?Collision;
 		  coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z]=0;
+		  dead[_pid-1]=1;
 
 		::(terminate_counter >= (2*(x_bound + y_bound + z_bound))) -> skip;
+		  dead[_pid-1]=1;
 
 		fi;
 
 		};
 
-end2:	do
-	     :: if
-		::TAmsg?Traffic;  	/*This process is actually dead at this point but other processes might try to send the RA & TA msg to this process, this do 						loop is work around to avoid timeout as RA & TA msg are sent via synchounous channels. */
-		::RAmsg?Maintain;
-		::RAmsg?Decend;
-		::RAmsg?Climb;
-		::else
-		fi;
-	
-	od;
 }
 
 init {
@@ -382,20 +376,10 @@ byte i;
 		for(i : 0..(NoOfAirplanes-1)) {
 			run airplane(reply[i], RAmessage[i], TAmessage[i]);
 		}
-	/*run monitor();*/
 	}
 }
 
-ltl pr1 { []<> p } /*Infinitely often query, ie, query channel should not be empty.. some process at anytime should place its id in query channel */
 
-/*proctype monitor()
-{
-	atomic {
-		for(it : 1..12) {
-			assert(airplane[it]@qlabel);
-		}
-	}
-}*/
 	
 	
 
