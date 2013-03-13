@@ -1,8 +1,10 @@
-#define x_bound 6
-#define y_bound 6
-#define z_bound 6
-#define NoOfAirplanes 3
+#define x_bound 3
+#define y_bound 3
+#define z_bound 3
+#define NoOfAirplanes 2
+#define chanSZ 4
 #define kCells 3		/*No of cells to define RA & TA */
+
 
 /* Airspace declartion */	/*A co-ordinate in the airspace can be accessed like x[1].y[0].z[4]*/
 	typedef y_array {
@@ -16,7 +18,7 @@
 	typedef position  {
 	  x_array x[x_bound]  					
 	};
-	position coordinate;	
+	position coordinate;
 
 /* Direction declaration*/
 	mtype = {increment, decrement, none, Climb, Maintain, Decend, Collision, Traffic};
@@ -29,19 +31,27 @@
 
 /* Channel declaration*/
 	chan query = [1000] of {byte};
-	chan reply[NoOfAirplanes] = [100] of {airplane_data}; 			/* Each airplane has its own receive channel */
-	chan RAmessage[NoOfAirplanes] = [0] of {mtype};				/*synchronous channel for RA messages */
-	chan TAmessage[NoOfAirplanes] = [0] of {mtype};				/*synchronous channel for TA messages */
+
+/* Each airplane has its own receive channel */ /*airplane _pid-s seem to be different than expected during verification runs. So adding 2 for safety*/
+	chan reply[chanSZ] = [100] of {airplane_data}; 		
+	chan RAmessage[chanSZ] = [0] of {mtype};				/*synchronous channel for RA messages */
+	chan TAmessage[chanSZ] = [0] of {mtype};				/*synchronous channel for TA messages */
 
 /*Global variable to check if the other plane is dead*/
-	bit dead[NoOfAirplanes];
+	bit dead[chanSZ];
+
+/*Properties verifying variables*/
+	bit airspace_consistency = 1;		/*airspace consistency check*/
+	location previous_loc[chanSZ];		/*Previous positions of airplanes*/
+	location current_loc[chanSZ];		/*Current positions of airplanes*/
+	bit movement_proper = 1;		/*Movement proper, i.e, when airplane reaches x_bound it should take turn or switch to other end of airspace*/
 
 /* To generate random number between 0- 255 to assing initial position of airplane */
 	
 	inline randnum()
 	{
 		do
-		:: randNo++		
+		:: (randNo< 255) -> randNo++		
 		:: (randNo>0) -> randNo--
 		:: break	
 		od;
@@ -56,6 +66,9 @@
 	if
 	:: (timer==0)->
 		atomic {
+		previous_loc[_pid].x = myPlane.loc.x;                                    /*Tracing myPlane's previous location*/
+		previous_loc[_pid].y = myPlane.loc.y;
+		previous_loc[_pid].z = myPlane.loc.z;
 		coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] = 0; /*clearing current position in airspace*/
 		if
 		::myPlane.dir.x == increment && myPlane.loc.x == (x_bound-1) -> myPlane.loc.x = 0
@@ -90,10 +103,13 @@
 		if
 		:: (coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] == 0) ->
 			coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z] = _pid; 	/*updating new position in airspace*/
+			current_loc[_pid].x = myPlane.loc.x;					/*updating new position to gobal variable current postion*/
+			current_loc[_pid].y = myPlane.loc.y;
+			current_loc[_pid].z = myPlane.loc.z;
 		:: else -> /*If there is already a plane in the region when moved then planes collied */ 
-			dead[_pid-1]=1;
+			dead[_pid]=1;
 		 	collidedPid = coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z];
-			RAmessage[collidedPid - 1]!Collision;
+			RAmessage[collidedPid]!Collision;
 			break;
 		fi;
 		}
@@ -103,7 +119,7 @@
 
 
 
-proctype airplane(chan receiveChan; chan RAmsg; chan TAmsg){ 	
+proctype airplane(){ 	
 byte terminate_counter;   /*Counter to terminate the process to make verification of model easier, as the airplanes are keep on moving infinitely */
 terminate_counter = 0;
 byte randNo;
@@ -173,12 +189,14 @@ L3:	do
 									 
 	::query?query_id;		  			 /*Read the query message from query channel*/
 	  if
-	  ::query_id!=_pid -> reply[query_id-1]!myPlane;
-	  ::else					      				 /*send a reply message via reply channel*/
+	  ::query_id!=_pid -> reply[query_id]!myPlane;
+	  ::else					      	/*send a reply message via reply channel*/
 	  fi;	  
 	  move_plane();
 
-	::receiveChan?receivedPlane;			 /*read a reply message via reply channel*/
+	::reply[_pid]?receivedPlane;			 /*read a reply message via reply channel*/
+	  receivedPlaneRA = 0;
+	  receivedPlaneTA = 0;
 
 	/*Identifying RA1 region around my plane. RA1 and RA2 'start and end' represents the boundaries of RA region on either side of my plane*/
 	  
@@ -278,8 +296,7 @@ L3:	do
 		::else -> zRA = 0;
 		fi;
 
-		receivedPlaneRA = 0;
-		receivedPlaneTA = 0;
+		
 		decision = 0;
 		if
 		::xRA == 1 && yRA == 1 && zRA == 1 -> decision = Climb;
@@ -320,49 +337,61 @@ L3:	do
 			::else -> receivedPlaneTA = 0;
 			fi;
 		fi;
+		assert(!(receivedPlaneRA == 1 && receivedPlaneTA == 1)); /* verifies if a recived plane is not in RA and TA region at sam time */
+		//assert(false);		
 		move_plane();
 			
 	od unless{
 		if	/*Send RA and TA msg only if the otherplane is alive*/
-		:: (receivedPlaneRA == 1 && dead[receivedPlane.id-1]==0) -> RAmessage[receivedPlane.id-1]!decision;
+		:: receivedPlaneRA == 1 ->
 		   if
-			::decision == Climb -> myPlane.dir.z=increment;
-			::decision == Decend -> myPlane.dir.z=decrement;
-			::else
+		   ::dead[receivedPlane.id]==0 -> RAmessage[receivedPlane.id]!decision;
+		     if
+		     ::decision == Climb -> myPlane.dir.z=increment;
+		     ::decision == Decend -> myPlane.dir.z=decrement;
+		     ::else
+		     fi;
+		     receivedPlaneRA = 0;
+		   ::else -> receivedPlaneRA = 0;
 		   fi;
-		   receivedPlaneRA = 0;
 		   move_plane();
 		   goto L3
-		   
-		:: (receivedPlaneTA == 1 && dead[receivedPlane.id-1]==0) -> TAmessage[receivedPlane.id-1]!Traffic;
-		   receivedPlaneTA = 0;
-		   move_plane();
-		   goto L3
+
+		:: receivedPlaneTA == 1 ->
+		   if
+		   ::dead[receivedPlane.id]==0 -> TAmessage[receivedPlane.id]!Traffic;
+		     receivedPlaneTA = 0;
+		     move_plane();
+		     goto L3
+		   ::else -> receivedPlaneTA = 0;
+		     move_plane();
+	             goto L3
+		   fi;
 	
-		::RAmsg?Climb;
+		::RAmessage[_pid]?Climb;
 		  myPlane.dir.z=decrement;
 		  move_plane();
 		  goto L3
 
-		::RAmsg?Decend;
+		::RAmessage[_pid]?Decend;
 		  myPlane.dir.z=increment;
 		  move_plane();
 		  goto L3
 
-		::RAmsg?Maintain;
+		::RAmessage[_pid]?Maintain;
 		  move_plane();
 		  goto L3
 
-		::TAmsg?Traffic;
+		::TAmessage[_pid]?Traffic;
 		  move_plane();
 		  goto L3
 
-		::RAmsg?Collision;
+		::RAmessage[_pid]?Collision;
 		  coordinate.x[myPlane.loc.x].y[myPlane.loc.y].z[myPlane.loc.z]=0;
-		  dead[_pid-1]=1;
+		  dead[_pid]=1;
 
 		::(terminate_counter >= (2*(x_bound + y_bound + z_bound))) -> skip;
-		  dead[_pid-1]=1;
+		  dead[_pid]=1;
 
 		fi;
 
@@ -370,18 +399,75 @@ L3:	do
 
 }
 
-init {
-byte i;
-	atomic {
-		for(i : 0..(NoOfAirplanes-1)) {
-			run airplane(reply[i], RAmessage[i], TAmessage[i]);
+/* No airplane should be at 2 places in airspace at same time */
+proctype monitor_airspace_consistency() 
+{
+	byte a,b,c,airplaneid;
+	byte cnt;
+	do
+	 :: airspace_consistency == 1 -> 
+	    for (airplaneid : 1..(NoOfAirplanes+1)) {
+		cnt=0;
+		for (a : 0..(x_bound-1)) {
+			for (b : 0..(y_bound-1)) {
+				for (c : 0..(z_bound-1)) {
+					if
+					:: coordinate.x[a].y[b].z[c] == airplaneid -> cnt++;
+					::else
+					fi;
+				}
+			}
 		}
-	}
+		if
+		    :: cnt>1 -> airspace_consistency = 0; break;
+		    :: else
+		fi;
+	    }
+	   ::airspace_consistency == 0 -> break;
+	od;
+}
+
+/* If airplane reaches x_bound it should either turn or go to other end of the airspace */
+proctype monitor_movement() 
+{
+	byte airplanepid;
+	do
+	 :: for (airplanepid : 1..(NoOfAirplanes+1)) {
+		if
+		::(previous_loc[airplanepid].x == x_bound-1) && ((current_loc[airplanepid].x == (previous_loc[airplanepid].x-1)) || (current_loc[airplanepid].x == 0) ||(current_loc[airplanepid].x == previous_loc[airplanepid].x)) -> movement_proper = 0;
+		::else
+		fi;
+		if
+		::(previous_loc[airplanepid].y == y_bound-1) && ((current_loc[airplanepid].y == (previous_loc[airplanepid].y-1)) || (current_loc[airplanepid].y == 0) ||(current_loc[airplanepid].y == previous_loc[airplanepid].y)) -> movement_proper = 0;
+		::else
+		fi;
+		if
+		::(previous_loc[airplanepid].z == z_bound-1) && ((current_loc[airplanepid].z != (previous_loc[airplanepid].z-1)) || (current_loc[airplanepid].z != 0) ||(current_loc[airplanepid].z != previous_loc[airplanepid].z)) -> movement_proper = 0;
+		::else
+		fi;
+	    }	
+	 :: movement_proper == 0 -> break;   
+	od;
 }
 
 
+init {
+byte i;
+	atomic {
+		for(i : 1..(NoOfAirplanes)) {
+			run airplane();
+		}
+	run monitor_airspace_consistency();
+	run monitor_movement();
+	}
+}	
 	
-	
+/*No airplane should be at 2 places in airspace at same time */
+never {
+	do
+	::airspace_consistency == 0 -> break;
+	::else
+	od;
+}
 
-
-
+ltl always_movement_proper {always (movement_proper == 1)}; /* If airplane reaches x_bound it should either turn or go to other end of the airspace */
